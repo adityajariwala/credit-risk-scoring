@@ -1,8 +1,4 @@
-"""
-Pydantic schemas for API request/response validation.
-
-These schemas provide type safety, validation, and automatic OpenAPI documentation.
-"""
+"""Request / response schemas. Pydantic handles validation + OpenAPI docs."""
 
 from __future__ import annotations
 
@@ -13,8 +9,6 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class RiskTier(str, Enum):
-    """Risk tier classification."""
-
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -22,8 +16,6 @@ class RiskTier(str, Enum):
 
 
 class Recommendation(str, Enum):
-    """Lending recommendation based on risk tier."""
-
     APPROVE = "approve"
     REVIEW = "review"
     ENHANCED_REVIEW = "enhanced_review"
@@ -31,11 +23,7 @@ class Recommendation(str, Enum):
 
 
 class LoanApplication(BaseModel):
-    """
-    Input schema for credit risk prediction.
-
-    All fields correspond to features used in the model.
-    """
+    """Fields mirror the feature set the model was trained on."""
 
     loan_amnt: float = Field(..., gt=0, le=50000, description="Loan amount in USD")
     annual_inc: float = Field(..., gt=0, le=1000000, description="Annual income in USD")

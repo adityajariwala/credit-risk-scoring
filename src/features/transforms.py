@@ -1,9 +1,9 @@
 """
-Feature transformations for credit risk scoring.
+Reusable feature transforms with train/serve parity.
 
-This module provides reusable transformations that maintain parity between
-offline training and online inference. Each transform is a pure function
-that can be applied consistently across both environments.
+Each transform serializes its state for artifact persistence and can be
+rehydrated at inference time. The ABC keeps the interface uniform so the
+pipeline doesn't need to care which concrete transform it's dealing with.
 """
 
 from __future__ import annotations
@@ -17,37 +17,32 @@ import pandas as pd
 
 
 class BaseTransform(ABC):
-    """Abstract base class for feature transformations."""
+    """Interface every feature transform must satisfy."""
 
     @abstractmethod
-    def fit(self, data: pd.Series) -> BaseTransform:
-        """Fit the transform on training data."""
-        pass
+    def fit(self, data: pd.Series) -> BaseTransform: ...
 
     @abstractmethod
-    def transform(self, data: pd.Series) -> pd.Series | pd.DataFrame:
-        """Apply the transform to data."""
-        pass
+    def transform(self, data: pd.Series) -> pd.Series | pd.DataFrame: ...
 
     def fit_transform(self, data: pd.Series) -> pd.Series | pd.DataFrame:
-        """Fit and transform in one step."""
         return self.fit(data).transform(data)
 
     @abstractmethod
     def to_dict(self) -> dict[str, Any]:
-        """Serialize transform state for persistence."""
-        pass
+        """Serialize for persistence."""
+        ...
 
     @classmethod
     @abstractmethod
     def from_dict(cls, config: dict[str, Any]) -> BaseTransform:
-        """Deserialize transform from persisted state."""
-        pass
+        """Reconstruct from serialized dict."""
+        ...
 
 
 @dataclass
 class Log1pTransform(BaseTransform):
-    """Log(1+x) transform for handling skewed distributions."""
+    """Log(1+x) — handles the typical right-skew in monetary features."""
 
     fill_value: float = 0.0
     _fitted: bool = False
@@ -58,8 +53,7 @@ class Log1pTransform(BaseTransform):
 
     def transform(self, data: pd.Series) -> pd.Series:
         filled = data.fillna(self.fill_value)
-        # Clip negative values to 0 before log
-        return pd.Series(np.log1p(np.maximum(filled, 0)))
+        return pd.Series(np.log1p(np.maximum(filled, 0)))  # negative -> 0 first
 
     def to_dict(self) -> dict[str, Any]:
         return {"type": "log1p", "fill_value": self.fill_value}
@@ -73,7 +67,7 @@ class Log1pTransform(BaseTransform):
 
 @dataclass
 class ClipTransform(BaseTransform):
-    """Clip values to a specified range."""
+    """Hard-clip numeric values to [clip_min, clip_max]."""
 
     clip_min: float
     clip_max: float
@@ -109,7 +103,7 @@ class ClipTransform(BaseTransform):
 
 @dataclass
 class IdentityTransform(BaseTransform):
-    """No-op transform, just handles missing values."""
+    """Pass-through; just fills NaN."""
 
     fill_value: float = 0.0
     _fitted: bool = False
@@ -133,7 +127,7 @@ class IdentityTransform(BaseTransform):
 
 @dataclass
 class StandardScalerTransform(BaseTransform):
-    """Standardize features by removing mean and scaling to unit variance."""
+    """z-score normalization: (x - mean) / std."""
 
     fill_value: float = 0.0
     mean_: float | None = None
@@ -143,8 +137,7 @@ class StandardScalerTransform(BaseTransform):
         filled = data.fillna(self.fill_value)
         self.mean_ = float(filled.mean())
         self.std_ = float(filled.std())
-        # Prevent division by zero
-        if self.std_ == 0:
+        if self.std_ == 0:  # constant feature edge case
             self.std_ = 1.0
         return self
 
@@ -172,7 +165,7 @@ class StandardScalerTransform(BaseTransform):
 
 @dataclass
 class LabelEncoderTransform(BaseTransform):
-    """Encode categorical values as integers."""
+    """Simple cat -> int mapping."""
 
     categories: list[str]
     unknown_value: int = -1
@@ -208,14 +201,13 @@ class LabelEncoderTransform(BaseTransform):
 
 @dataclass
 class OrdinalEncoderTransform(BaseTransform):
-    """Encode ordinal categorical values preserving order."""
+    """Cat -> int but order matters (e.g. loan grade A < B < C ...)."""
 
     categories: list[str]
     unknown_value: int = -1
     _mapping: dict[str, int] | None = None
 
     def fit(self, data: pd.Series) -> OrdinalEncoderTransform:
-        # Ordinal encoding preserves the order of categories
         self._mapping = {cat: idx for idx, cat in enumerate(self.categories)}
         return self
 
@@ -244,7 +236,7 @@ class OrdinalEncoderTransform(BaseTransform):
 
 @dataclass
 class OneHotEncoderTransform(BaseTransform):
-    """One-hot encode categorical values."""
+    """One-hot: creates one binary column per category."""
 
     categories: list[str]
     feature_name: str = ""
@@ -255,7 +247,6 @@ class OneHotEncoderTransform(BaseTransform):
         return self
 
     def transform(self, data: pd.Series) -> pd.DataFrame:
-        """Returns a DataFrame with one column per category."""
         if not self._fitted:
             raise ValueError("Transform must be fitted before transform")
 
@@ -266,7 +257,6 @@ class OneHotEncoderTransform(BaseTransform):
         return result
 
     def get_feature_names(self) -> list[str]:
-        """Get output feature names after transformation."""
         return [
             f"{self.feature_name}_{cat}" if self.feature_name else cat for cat in self.categories
         ]
@@ -290,7 +280,7 @@ class OneHotEncoderTransform(BaseTransform):
 
 @dataclass
 class TargetEncoderTransform(BaseTransform):
-    """Target encoding for high-cardinality categorical features."""
+    """Target (mean) encoding with Bayesian smoothing for high-cardinality cats."""
 
     min_samples: int = 100
     smoothing: float = 1.0
@@ -304,20 +294,18 @@ class TargetEncoderTransform(BaseTransform):
 
         self._global_mean = float(target.mean())
 
-        # Calculate category means with smoothing
         df = pd.DataFrame({"cat": data, "target": target})
         stats = df.groupby("cat")["target"].agg(["mean", "count"])
 
         self._encoding_map = {}
         for cat, row in stats.iterrows():
             if row["count"] >= self.min_samples:
-                # Apply smoothing: weighted average of category mean and global mean
+                # smoothing: weighted avg of category mean vs global mean
                 weight = row["count"] / (row["count"] + self.smoothing)
                 smoothed_mean = weight * row["mean"] + (1 - weight) * self._global_mean
                 self._encoding_map[str(cat)] = smoothed_mean
             else:
-                # Use global mean for rare categories
-                self._encoding_map[str(cat)] = self._global_mean
+                self._encoding_map[str(cat)] = self._global_mean  # too few samples
 
         self.fill_value = self._global_mean
         return self
@@ -349,7 +337,7 @@ class TargetEncoderTransform(BaseTransform):
 
 
 def create_transform(config: dict[str, Any]) -> BaseTransform:
-    """Factory function to create transforms from config."""
+    """Build a concrete transform from a config dict."""
     transform_type = config.get("transform", config.get("type", "none"))
 
     if transform_type == "log1p":
@@ -387,7 +375,7 @@ def create_transform(config: dict[str, Any]) -> BaseTransform:
 
 
 def deserialize_transform(config: dict[str, Any]) -> BaseTransform:
-    """Deserialize a transform from its persisted state."""
+    """Reconstruct a fitted transform from its saved dict."""
     transform_type = config.get("type", "none")
 
     if transform_type == "log1p":

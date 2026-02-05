@@ -149,14 +149,14 @@ docker-compose --profile monitoring up --build
 
 ## API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/ready` | GET | Readiness probe |
-| `/metrics` | GET | Prometheus metrics |
-| `/predict` | POST | Single prediction |
-| `/predict/batch` | POST | Batch predictions (up to 100) |
-| `/model/info` | GET | Model metadata |
+| Endpoint         | Method | Description                   |
+|------------------|--------|-------------------------------|
+| `/health`        | GET    | Health check                  |
+| `/ready`         | GET    | Readiness probe               |
+| `/metrics`       | GET    | Prometheus metrics            |
+| `/predict`       | POST   | Single prediction             |
+| `/predict/batch` | POST   | Batch predictions (up to 100) |
+| `/model/info`    | GET    | Model metadata                |
 
 ### Example Response
 

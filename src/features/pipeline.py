@@ -1,9 +1,9 @@
 """
-Feature engineering pipeline for credit risk scoring.
+Unified feature pipeline — same code path for training and serving.
 
-This module provides a unified pipeline that ensures feature parity between
-offline training and online inference. The same transformations are applied
-consistently, preventing training-serving skew.
+The key idea: one FeaturePipeline instance gets fit during training,
+serialized alongside the model, and reloaded at inference time. This
+eliminates the train/serve skew problem.
 """
 
 from __future__ import annotations
@@ -27,12 +27,7 @@ from src.features.transforms import (
 
 @dataclass
 class FeaturePipeline:
-    """
-    Unified feature engineering pipeline.
-
-    Ensures identical transformations during training and inference,
-    preventing feature/training/serving skew.
-    """
+    """Orchestrates numeric, categorical, and derived feature transforms."""
 
     config: dict[str, Any]
     numeric_transforms: dict[str, BaseTransform] = field(default_factory=dict)
@@ -42,21 +37,11 @@ class FeaturePipeline:
     _fitted: bool = False
 
     def __post_init__(self) -> None:
-        """Initialize transforms from config."""
         self.derived_features = self.config.get("features", {}).get("derived", [])
 
     def fit(self, df: pd.DataFrame, target: pd.Series | None = None) -> FeaturePipeline:
-        """
-        Fit all transformations on training data.
-
-        Args:
-            df: Training DataFrame
-            target: Target variable (required for target encoding)
-
-        Returns:
-            Self for method chaining
-        """
-        # Fit numeric transforms
+        """Fit all transforms on training data. Pass target if using target encoding."""
+        # numeric
         for feat_config in self.config.get("features", {}).get("numeric", []):
             name = feat_config["name"]
             if name in df.columns:
@@ -64,7 +49,7 @@ class FeaturePipeline:
                 transform.fit(df[name])
                 self.numeric_transforms[name] = transform
 
-        # Fit categorical transforms
+        # categorical
         for feat_config in self.config.get("features", {}).get("categorical", []):
             name = feat_config["name"]
             encoding = feat_config.get("encoding", "label")
@@ -81,56 +66,41 @@ class FeaturePipeline:
 
                 self.categorical_transforms[name] = transform
 
-        # Build final feature name list
         self._build_feature_names()
         self._fitted = True
         return self
 
     def _build_feature_names(self) -> None:
-        """Build the list of output feature names after transformation."""
+        """Assemble final column ordering (numeric -> categorical -> derived)."""
         self.feature_names = []
 
-        # Numeric features
         for name in self.numeric_transforms:
             self.feature_names.append(name)
 
-        # Categorical features (handle one-hot expansion)
         for name, transform in self.categorical_transforms.items():
             if isinstance(transform, OneHotEncoderTransform):
                 self.feature_names.extend(transform.get_feature_names())
             else:
                 self.feature_names.append(name)
 
-        # Derived features
         for derived in self.derived_features:
             self.feature_names.append(derived["name"])
 
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Apply fitted transformations to data.
-
-        Args:
-            df: Input DataFrame
-
-        Returns:
-            Transformed DataFrame with consistent feature ordering
-        """
+        """Apply fitted transforms, returning columns in deterministic order."""
         if not self._fitted:
             raise ValueError("Pipeline must be fitted before transform")
 
         result_parts: list[pd.DataFrame | pd.Series] = []
 
-        # Transform numeric features
         for name, transform in self.numeric_transforms.items():
             if name in df.columns:
                 transformed = transform.transform(df[name])
                 transformed.name = name
                 result_parts.append(transformed)
             else:
-                # Fill missing column with default
                 result_parts.append(pd.Series(0, index=df.index, name=name))
 
-        # Transform categorical features
         for name, transform in self.categorical_transforms.items():
             if name in df.columns:
                 transformed = transform.transform(df[name])
@@ -140,84 +110,52 @@ class FeaturePipeline:
                     transformed.name = name
                     result_parts.append(transformed)
             else:
-                # Fill missing categorical with default
                 if isinstance(transform, OneHotEncoderTransform):
                     for col_name in transform.get_feature_names():
                         result_parts.append(pd.Series(0, index=df.index, name=col_name))
                 else:
                     result_parts.append(pd.Series(-1, index=df.index, name=name))
 
-        # Concatenate all transformed features
         result = pd.concat(result_parts, axis=1) if result_parts else pd.DataFrame(index=df.index)
-
-        # Add derived features
         result = self._add_derived_features(result, df)
-
-        # Ensure consistent column ordering
         return result[self.feature_names]
 
     def _add_derived_features(self, result: pd.DataFrame, original: pd.DataFrame) -> pd.DataFrame:
-        """
-        Add derived features based on formulas.
-
-        Uses the original DataFrame for base feature values and
-        adds computed features to the result.
-        """
+        """Evaluate config-driven formulas. Falls back to 0 if something explodes."""
         for derived in self.derived_features:
             name = derived["name"]
             formula = derived["formula"]
 
             try:
-                # Create a combined namespace for eval
+                # merge both namespaces so formulas can reference either raw or transformed cols
                 namespace = {**original.to_dict("series"), **result.to_dict("series"), "np": np}
-
-                # Evaluate the formula safely
                 result[name] = pd.eval(
                     formula, local_dict={str(k): v for k, v in namespace.items()}
                 )
-
-                # Handle any infinities or NaN from division
                 result[name] = result[name].replace([np.inf, -np.inf], 0).fillna(0)
-
             except Exception as e:
-                # If formula evaluation fails, fill with zeros
                 result[name] = 0
-                # Log warning in production
+                # TODO: swap this for structlog once we add it to the pipeline module
                 print(f"Warning: Failed to compute derived feature {name}: {e}")
 
         return result
 
     def fit_transform(self, df: pd.DataFrame, target: pd.Series | None = None) -> pd.DataFrame:
-        """Fit and transform in one step."""
         return self.fit(df, target).transform(df)
 
     def transform_single(self, row: dict[str, Any]) -> dict[str, float]:
-        """
-        Transform a single observation for real-time inference.
-
-        This method is optimized for low-latency single-row transformation.
-
-        Args:
-            row: Dictionary with feature values
-
-        Returns:
-            Dictionary with transformed feature values
-        """
+        """Single-row transform for real-time serving. Not the fastest thing
+        ever (still builds a 1-row DataFrame) but keeps parity simple."""
         if not self._fitted:
             raise ValueError("Pipeline must be fitted before transform")
 
-        # Convert to single-row DataFrame for consistent processing
         df = pd.DataFrame([row])
         transformed = self.transform(df)
 
         return {str(k): v for k, v in transformed.iloc[0].to_dict().items()}
 
     def save(self, path: str | Path) -> None:
-        """
-        Save fitted pipeline to disk.
-
-        Serializes all transform states for later loading.
-        """
+        """Persist all transform states to JSON."""
         if not self._fitted:
             raise ValueError("Pipeline must be fitted before saving")
 
@@ -240,16 +178,7 @@ class FeaturePipeline:
 
     @classmethod
     def load(cls, path: str | Path, config: dict[str, Any] | None = None) -> FeaturePipeline:
-        """
-        Load a fitted pipeline from disk.
-
-        Args:
-            path: Path to saved pipeline state
-            config: Optional config (for reference, not required for transform)
-
-        Returns:
-            Loaded and ready-to-use pipeline
-        """
+        """Reconstruct a fitted pipeline from a JSON file saved by .save()."""
         path = Path(path)
 
         with open(path) as f:
@@ -257,7 +186,6 @@ class FeaturePipeline:
 
         pipeline = cls(config=config or {})
 
-        # Deserialize transforms
         pipeline.numeric_transforms = {
             name: deserialize_transform(transform_dict)
             for name, transform_dict in state["numeric_transforms"].items()
@@ -275,15 +203,10 @@ class FeaturePipeline:
         return pipeline
 
     def get_feature_names(self) -> list[str]:
-        """Get the list of output feature names."""
         return self.feature_names.copy()
 
     def get_feature_importance_map(self, importances: np.ndarray) -> dict[str, float]:
-        """
-        Map feature importances to feature names.
-
-        Useful for model interpretation.
-        """
+        """Zip feature importances with their names for readability."""
         if len(importances) != len(self.feature_names):
             raise ValueError(
                 f"Importance array length ({len(importances)}) doesn't match "

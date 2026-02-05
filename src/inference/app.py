@@ -1,9 +1,5 @@
 """
-FastAPI inference service for credit risk scoring.
-
-This module provides the HTTP API for real-time risk predictions,
-including health checks, single predictions, batch predictions,
-and model information endpoints.
+FastAPI app: health/ready probes, single + batch prediction, Prometheus metrics.
 """
 
 from __future__ import annotations
@@ -33,7 +29,6 @@ from src.inference.schemas import (
     RiskPrediction,
 )
 
-# Configure structured logging
 structlog.configure(
     processors=[
         structlog.stdlib.add_log_level,
@@ -49,7 +44,6 @@ logger = structlog.get_logger()
 
 REGISTRY = CollectorRegistry()
 
-# Prometheus metrics
 PREDICTION_COUNTER = Counter(
     "predictions_total",
     "Total number of predictions",
@@ -71,21 +65,17 @@ REQUEST_COUNTER = Counter(
 
 
 def load_config(config_path: str = "config/config.yaml") -> dict[str, Any]:
-    """Load configuration from YAML file."""
     with open(config_path) as f:
         return {str(k): v for k, v in yaml.safe_load(f).items()}
 
 
-# Global model service instance
 model_service: ModelService | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Application lifespan handler for startup/shutdown."""
+    """Load model on startup, clean up on shutdown."""
     global model_service
-
-    # Startup
     logger.info("starting_application")
 
     config_path = Path("config/config.yaml")
@@ -110,12 +100,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         model_service = None
 
     yield
-
-    # Shutdown
     logger.info("shutting_down_application")
 
 
-# Create FastAPI app
 app = FastAPI(
     title="Credit Risk Scoring API",
     description="Real-time credit risk prediction service with ML model inference and SHAP explanations",
@@ -123,10 +110,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add CORS middleware
+# TODO: lock down origins before deploying to prod
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -135,7 +122,6 @@ app.add_middleware(
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next: Any) -> Response:
-    """Log all HTTP requests with timing."""
     start_time = time.perf_counter()
 
     response: Response = await call_next(request)
@@ -161,11 +147,6 @@ async def log_requests(request: Request, call_next: Any) -> Response:
 
 @app.get("/health", response_model=HealthStatus, tags=["System"])
 async def health_check() -> HealthStatus:
-    """
-    Health check endpoint for load balancers and orchestration.
-
-    Returns service status and model availability.
-    """
     return HealthStatus(
         status="healthy" if model_service and model_service.is_loaded else "degraded",
         model_loaded=model_service.is_loaded if model_service else False,
@@ -175,11 +156,7 @@ async def health_check() -> HealthStatus:
 
 @app.get("/ready", tags=["System"])
 async def readiness_check() -> JSONResponse:
-    """
-    Readiness check endpoint.
-
-    Returns 200 only when the service is ready to accept traffic.
-    """
+    """Returns 503 until the model is loaded and ready."""
     if model_service and model_service.is_loaded:
         return JSONResponse(content={"ready": True}, status_code=status.HTTP_200_OK)
 
@@ -191,17 +168,11 @@ async def readiness_check() -> JSONResponse:
 
 @app.get("/metrics", tags=["System"])
 async def metrics() -> Response:
-    """Prometheus metrics endpoint."""
     return Response(content=generate_latest(registry=REGISTRY), media_type="text/plain")
 
 
 @app.get("/model/info", response_model=ModelInfo, tags=["Model"])
 async def get_model_info() -> ModelInfo:
-    """
-    Get information about the currently loaded model.
-
-    Returns model metadata including version, features, and training metrics.
-    """
     if not model_service or not model_service.is_loaded:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -217,16 +188,7 @@ async def predict(
     application: LoanApplication,
     include_explanation: bool = True,
 ) -> RiskPrediction:
-    """
-    Generate risk prediction for a single loan application.
-
-    Args:
-        application: Loan application details
-        include_explanation: Whether to include SHAP-based explanation
-
-    Returns:
-        Risk prediction with score, tier, recommendation, and optional explanation
-    """
+    """Score a single loan application."""
     if not model_service or not model_service.is_loaded:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -237,8 +199,6 @@ async def predict(
 
     try:
         prediction = model_service.predict(application, include_explanation)
-
-        # Record metrics
         elapsed = time.perf_counter() - start_time
         PREDICTION_LATENCY.observe(elapsed)
         PREDICTION_COUNTER.labels(
@@ -258,18 +218,7 @@ async def predict(
 
 @app.post("/predict/batch", response_model=BatchPredictionResponse, tags=["Prediction"])
 async def predict_batch(request: BatchPredictionRequest) -> BatchPredictionResponse:
-    """
-    Generate risk predictions for multiple loan applications.
-
-    Optimized for batch processing with vectorized operations.
-    Maximum 100 applications per request.
-
-    Args:
-        request: Batch prediction request with list of applications
-
-    Returns:
-        Batch prediction response with all predictions and processing time
-    """
+    """Batch scoring — up to 100 applications per call."""
     if not model_service or not model_service.is_loaded:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -285,8 +234,6 @@ async def predict_batch(request: BatchPredictionRequest) -> BatchPredictionRespo
         )
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000
-
-        # Record metrics
         for pred in predictions:
             PREDICTION_COUNTER.labels(
                 risk_tier=pred.risk_tier.value,
@@ -308,7 +255,6 @@ async def predict_batch(request: BatchPredictionRequest) -> BatchPredictionRespo
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Global exception handler for unhandled errors."""
     logger.error(
         "unhandled_exception",
         path=request.url.path,
@@ -323,7 +269,6 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 
 
 def main() -> None:
-    """Entry point for running the server."""
     config_path = Path("config/config.yaml")
     if config_path.exists():
         config = load_config(str(config_path))

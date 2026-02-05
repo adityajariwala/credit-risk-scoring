@@ -1,12 +1,8 @@
 """
-Training pipeline for credit risk scoring model.
+End-to-end training: data loading -> feature engineering -> LightGBM fit -> artifact saving.
 
-This module handles end-to-end model training including:
-- Data loading and preprocessing
-- Feature engineering via the unified pipeline
-- Model training with hyperparameters from config
-- Evaluation and metrics computation
-- Model and artifact serialization
+Run directly via `python -m src.training.train --create-sample-data` or import
+the individual functions for notebook / pipeline integration.
 """
 
 from __future__ import annotations
@@ -30,31 +26,20 @@ from src.features.pipeline import FeaturePipeline
 
 
 def load_config(config_path: str | Path) -> dict[str, Any]:
-    """Load configuration from YAML file."""
+    """Read the YAML config and return as a plain dict."""
     with open(config_path) as f:
         return {str(k): v for k, v in yaml.safe_load(f).items()}
 
 
 def load_data(data_path: str | Path, config: dict[str, Any]) -> tuple[pd.DataFrame, pd.Series]:
-    """
-    Load and prepare training data.
-
-    Args:
-        data_path: Path to the CSV data file
-        config: Configuration dictionary
-
-    Returns:
-        Tuple of (features DataFrame, target Series)
-    """
+    """Read CSV, binarize the target column, drop id cols."""
     df = pd.read_csv(data_path)
 
     target_col = config["training"]["target_column"]
     positive_class = config["training"]["positive_class"]
 
-    # Convert target to binary
     y = (df[target_col] == positive_class).astype(int)
 
-    # Remove target and ID columns from features
     drop_cols = [target_col, "id", "member_id"] if "id" in df.columns else [target_col]
     drop_cols = [col for col in drop_cols if col in df.columns]
     X = df.drop(columns=drop_cols)
@@ -63,12 +48,8 @@ def load_data(data_path: str | Path, config: dict[str, Any]) -> tuple[pd.DataFra
 
 
 def create_sample_data(output_path: str | Path, n_samples: int = 10000) -> None:
-    """
-    Create synthetic sample data for demonstration.
-
-    This generates realistic-looking credit data for testing the pipeline.
-    In production, this would be replaced with actual data loading.
-    """
+    """Generate synthetic credit data with realistic distributions.
+    Handy for demos; in prod this gets replaced with real data loading."""
     np.random.seed(42)
 
     data = {
@@ -116,8 +97,7 @@ def create_sample_data(output_path: str | Path, n_samples: int = 10000) -> None:
 
     df = pd.DataFrame(data)
 
-    # Generate target with realistic default rate (~15%)
-    # Higher risk factors: high DTI, high interest rate, low income, grade D-G
+    # target: ~15% default rate, driven by DTI, interest, income, grade
     risk_score = (
         df["dti"] / 40 * 0.3
         + df["int_rate"] / 25 * 0.25
@@ -145,33 +125,17 @@ def train_model(
     y_val: pd.Series,
     config: dict[str, Any],
 ) -> lgb.LGBMClassifier:
-    """
-    Train LightGBM model with early stopping.
-
-    Args:
-        X_train: Training features
-        y_train: Training labels
-        X_val: Validation features
-        y_val: Validation labels
-        config: Model configuration
-
-    Returns:
-        Trained LightGBM classifier
-    """
+    """Fit LightGBM with early stopping and optional class balancing."""
     model_params = config["model"]["params"].copy()
 
-    # Handle class imbalance
     if config["training"].get("class_weight") == "balanced":
         n_neg = (y_train == 0).sum()
         n_pos = (y_train == 1).sum()
         model_params["scale_pos_weight"] = n_neg / n_pos
 
-    # Extract early stopping rounds
     early_stopping_rounds = model_params.pop("early_stopping_rounds", 20)
-
     model = lgb.LGBMClassifier(**model_params)
 
-    # Train with early stopping
     model.fit(
         X_train,
         y_train,
@@ -187,17 +151,7 @@ def train_model(
 
 
 def cross_validate(X: pd.DataFrame, y: pd.Series, config: dict[str, Any]) -> dict[str, list[float]]:
-    """
-    Perform stratified k-fold cross-validation.
-
-    Args:
-        X: Features
-        y: Labels
-        config: Configuration
-
-    Returns:
-        Dictionary of metric lists across folds
-    """
+    """Stratified k-fold CV. Returns per-fold metrics keyed by name."""
     n_folds = config["training"]["cv_folds"]
     random_state = config["training"]["random_state"]
 
@@ -218,10 +172,7 @@ def cross_validate(X: pd.DataFrame, y: pd.Series, config: dict[str, Any]) -> dic
         X_val_fold = X.iloc[val_idx]
         y_val_fold = y.iloc[val_idx]
 
-        # Train fold model
         model = train_model(X_train_fold, y_train_fold, X_val_fold, y_val_fold, config)
-
-        # Evaluate
         y_pred_proba = model.predict_proba(X_val_fold)[:, 1]
         metrics = evaluate_model(y_val_fold, y_pred_proba)
 
@@ -239,38 +190,22 @@ def save_artifacts(
     metrics: dict[str, Any],
     output_dir: str | Path,
 ) -> dict[str, str]:
-    """
-    Save all training artifacts.
-
-    Args:
-        model: Trained model
-        pipeline: Fitted feature pipeline
-        config: Configuration
-        metrics: Evaluation metrics
-        output_dir: Output directory
-
-    Returns:
-        Dictionary of artifact paths
-    """
+    """Persist model, pipeline, and metadata to a versioned directory."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     model_version = config["model"]["version"]
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
-    # Create versioned subdirectory
     version_dir = output_dir / model_version
     version_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save model
     model_path = version_dir / "model.joblib"
     joblib.dump(model, model_path)
 
-    # Save feature pipeline
     pipeline_path = version_dir / "pipeline.json"
     pipeline.save(pipeline_path)
 
-    # Save model metadata
     metadata = {
         "model_name": config["model"]["name"],
         "model_version": model_version,
@@ -286,7 +221,7 @@ def save_artifacts(
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2, default=str)
 
-    # Create/update latest symlink
+    # symlink so the serving layer always finds the newest version
     latest_link = output_dir / "latest"
     if latest_link.exists():
         latest_link.unlink()

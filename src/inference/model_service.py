@@ -1,8 +1,8 @@
 """
-Model service for loading and serving predictions.
+Model loading, prediction, and SHAP explanation logic.
 
-This module handles model lifecycle management, prediction logic,
-and SHAP-based explanations.
+Sits between the FastAPI routes and the raw LightGBM model — handles
+feature transformation, probability thresholding, and explanation formatting.
 """
 
 from __future__ import annotations
@@ -34,12 +34,7 @@ logger = structlog.get_logger()
 
 @dataclass
 class ModelService:
-    """
-    Service for model prediction and explanation.
-
-    Handles model loading, feature transformation, prediction,
-    and SHAP-based explanations in a unified interface.
-    """
+    """Wraps a trained model + pipeline for serving."""
 
     model_dir: str | Path
     config: dict[str, Any]
@@ -50,19 +45,10 @@ class ModelService:
     _loaded: bool = False
 
     def load(self, version: str = "latest") -> ModelService:
-        """
-        Load model and associated artifacts.
-
-        Args:
-            version: Model version to load (or 'latest')
-
-        Returns:
-            Self for method chaining
-        """
+        """Load model, pipeline, and metadata from disk. Returns self for chaining."""
         model_dir = Path(self.model_dir)
         version_dir = model_dir / version
 
-        # Resolve 'latest' symlink
         if version == "latest" and version_dir.is_symlink():
             version_dir = version_dir.resolve()
 
@@ -71,20 +57,13 @@ class ModelService:
 
         logger.info("loading_model", version_dir=str(version_dir))
 
-        # Load model
-        model_path = version_dir / "model.joblib"
-        self.model = joblib.load(model_path)
+        self.model = joblib.load(version_dir / "model.joblib")
+        self.pipeline = FeaturePipeline.load(version_dir / "pipeline.json", self.config)
 
-        # Load pipeline
-        pipeline_path = version_dir / "pipeline.json"
-        self.pipeline = FeaturePipeline.load(pipeline_path, self.config)
-
-        # Load metadata
         metadata_path = version_dir / "metadata.json"
         with open(metadata_path) as f:
             self.metadata = json.load(f)
 
-        # Initialize SHAP explainer if enabled
         if self.config.get("inference", {}).get("shap", {}).get("enabled", False):
             self._init_explainer()
 
@@ -98,7 +77,6 @@ class ModelService:
         return self
 
     def _init_explainer(self) -> None:
-        """Initialize SHAP TreeExplainer for model explanations."""
         try:
             self.explainer = shap.TreeExplainer(self.model)
             logger.info("shap_explainer_initialized")
@@ -111,36 +89,20 @@ class ModelService:
         application: LoanApplication,
         include_explanation: bool = True,
     ) -> RiskPrediction:
-        """
-        Generate risk prediction for a single loan application.
-
-        Args:
-            application: Loan application data
-            include_explanation: Whether to include SHAP explanation
-
-        Returns:
-            RiskPrediction with score, tier, recommendation, and optional explanation
-        """
+        """Score a single application. Optionally attaches SHAP explanation."""
         if not self._loaded:
             raise RuntimeError("Model not loaded. Call load() first.")
 
         start_time = time.perf_counter()
 
-        # Convert to dict and transform features
         app_dict = application.model_dump()
         features = self.pipeline.transform_single(app_dict)
-
-        # Create DataFrame for prediction
         feature_names = self.pipeline.get_feature_names()
         X = pd.DataFrame([features])[feature_names]
 
-        # Get prediction probability
         proba = self.model.predict_proba(X)[0, 1]
-
-        # Determine risk tier
         risk_tier, recommendation = self._get_risk_tier(proba)
 
-        # Generate explanation if requested
         explanation = None
         if include_explanation and self.explainer is not None:
             for feature in self.pipeline.derived_features:
@@ -175,46 +137,29 @@ class ModelService:
         applications: list[LoanApplication],
         include_explanations: bool = False,
     ) -> list[RiskPrediction]:
-        """
-        Generate predictions for multiple applications.
-
-        Optimized for batch processing with vectorized operations.
-
-        Args:
-            applications: List of loan applications
-            include_explanations: Whether to include SHAP explanations
-
-        Returns:
-            List of RiskPrediction objects
-        """
+        """Vectorized scoring for multiple applications at once."""
         if not self._loaded:
             raise RuntimeError("Model not loaded. Call load() first.")
 
         start_time = time.perf_counter()
 
-        # Convert all applications to DataFrame
         app_dicts = [app.model_dump() for app in applications]
         df = pd.DataFrame(app_dicts)
-
-        # Transform features
         X = self.pipeline.transform(df)
         feature_names = self.pipeline.get_feature_names()
         X = X[feature_names]
 
-        # Batch prediction
         probs = self.model.predict_proba(X)[:, 1]
 
-        # Generate explanations if requested
         explanations: list[PredictionExplanation | None] = [None] * len(applications)
         if include_explanations and self.explainer is not None:
             shap_values = self.explainer.shap_values(X)
             if isinstance(shap_values, list):
-                shap_values = shap_values[1]  # For binary classification
+                shap_values = shap_values[1]  # binary clf returns [neg_class, pos_class]
 
             for i, (app_dict, shap_vals) in enumerate(zip(app_dicts, shap_values, strict=True)):
                 explanations[i] = self._format_explanation(shap_vals, feature_names, app_dict)
 
-        # Build response
         predictions = []
         for i, prob in enumerate(probs):
             risk_tier, recommendation = self._get_risk_tier(prob)
@@ -239,7 +184,7 @@ class ModelService:
         return predictions
 
     def _get_risk_tier(self, proba: float) -> tuple[RiskTier, Recommendation]:
-        """Map probability to risk tier and recommendation."""
+        """Walk the tier list and return the first match."""
         risk_tiers = self.config.get("inference", {}).get("risk_tiers", [])
 
         for tier in risk_tiers:
@@ -248,18 +193,14 @@ class ModelService:
                 recommendation = Recommendation(tier["recommendation"])
                 return risk_tier, recommendation
 
-        # Default to the highest risk if no tier matches
-        return RiskTier.VERY_HIGH, Recommendation.DECLINE
+        return RiskTier.VERY_HIGH, Recommendation.DECLINE  # fallback
 
     def _generate_explanation(
         self, X: pd.DataFrame, original_input: dict[str, Any]
     ) -> PredictionExplanation:
-        """Generate SHAP-based explanation for a single prediction."""
         shap_values = self.explainer.shap_values(X)
-
-        # Handle binary classification output
         if isinstance(shap_values, list):
-            shap_values = shap_values[1]  # Get positive class
+            shap_values = shap_values[1]  # positive class
 
         feature_names = self.pipeline.get_feature_names()
         return self._format_explanation(shap_values[0], feature_names, original_input)
@@ -270,27 +211,23 @@ class ModelService:
         feature_names: list[str],
         original_input: dict[str, Any],
     ) -> PredictionExplanation:
-        """Format SHAP values into explanation schema."""
+        """Package raw SHAP values into the API-friendly schema."""
         max_features = (
             self.config.get("inference", {}).get("shap", {}).get("max_display_features", 10)
         )
 
-        # Get base value (expected value)
         if hasattr(self.explainer, "expected_value"):
             base_value = self.explainer.expected_value
             if isinstance(base_value, (list, np.ndarray)):
-                base_value = base_value[1]  # Positive class
+                base_value = base_value[1]
         else:
             base_value = 0.5
 
-        # Sort features by absolute contribution
         feature_contributions = list(zip(feature_names, shap_values, strict=False))
         feature_contributions.sort(key=lambda x: abs(x[1]), reverse=True)
 
-        # Format top contributors
         top_contributors = []
         for name, contribution in feature_contributions[:max_features]:
-            # Get original value if available
             original_value = original_input.get(name, "N/A")
 
             top_contributors.append(
@@ -307,7 +244,6 @@ class ModelService:
         )
 
     def get_info(self) -> dict[str, Any]:
-        """Get model metadata and info."""
         if not self._loaded:
             return {"status": "not_loaded"}
 
@@ -323,10 +259,8 @@ class ModelService:
 
     @property
     def is_loaded(self) -> bool:
-        """Check if model is loaded."""
         return self._loaded
 
     @property
     def version(self) -> str | None:
-        """Get loaded model version."""
         return self.metadata.get("model_version") if self._loaded else None
