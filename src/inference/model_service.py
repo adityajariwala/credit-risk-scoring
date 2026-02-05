@@ -144,8 +144,13 @@ class ModelService:
         explanation = None
         if include_explanation and self.explainer is not None:
             for feature in self.pipeline.derived_features:
-                if not X[feature.get("name")].empty and feature.get("name") not in app_dict:
-                    app_dict[feature.get("name")] = round(X[feature.get("name")].iloc[0], 4)
+                feature_name = feature.get("name")
+                if (
+                    isinstance(feature_name, str)
+                    and not X[feature_name].empty
+                    and feature_name not in app_dict
+                ):
+                    app_dict[feature_name] = round(X[feature_name].iloc[0], 4)
             explanation = self._generate_explanation(X, app_dict)
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000
