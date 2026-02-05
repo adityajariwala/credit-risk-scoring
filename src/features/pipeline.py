@@ -148,10 +148,7 @@ class FeaturePipeline:
                     result_parts.append(pd.Series(-1, index=df.index, name=name))
 
         # Concatenate all transformed features
-        if result_parts:
-            result = pd.concat(result_parts, axis=1)
-        else:
-            result = pd.DataFrame(index=df.index)
+        result = pd.concat(result_parts, axis=1) if result_parts else pd.DataFrame(index=df.index)
 
         # Add derived features
         result = self._add_derived_features(result, df)
@@ -297,4 +294,4 @@ class FeaturePipeline:
                 f"number of features ({len(self.feature_names)})"
             )
 
-        return dict(zip(self.feature_names, importances))
+        return dict(zip(self.feature_names, importances, strict=True))

@@ -7,7 +7,6 @@ Tests metric computation accuracy and edge cases.
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from src.evaluation.metrics import (
     compute_gini_coefficient,

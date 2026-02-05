@@ -25,7 +25,7 @@ import pandas as pd
 import yaml
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
-from src.evaluation.metrics import evaluate_model, compute_threshold_metrics
+from src.evaluation.metrics import compute_threshold_metrics, evaluate_model
 from src.features.pipeline import FeaturePipeline
 
 
@@ -371,7 +371,7 @@ def main() -> int:
         X_temp, y_temp, test_size=val_size / (1 - test_size), random_state=random_state, stratify=y_temp
     )
 
-    print(f"\nData splits:")
+    print("\nData splits:")
     print(f"  Train: {len(X_train)} samples")
     print(f"  Validation: {len(X_val)} samples")
     print(f"  Test: {len(X_test)} samples")

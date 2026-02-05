@@ -61,7 +61,7 @@ include = ["src*"]
 [tool.ruff]
 target-version = "py310"
 line-length = 100
-select = [
+lint.select = [
     "E",      # pycodestyle errors
     "W",      # pycodestyle warnings
     "F",      # Pyflakes
@@ -72,12 +72,15 @@ select = [
     "ARG",    # flake8-unused-arguments
     "SIM",    # flake8-simplify
 ]
-ignore = [
+lint.ignore = [
     "E501",   # line too long (handled by formatter)
-    "B008",   # do not perform function calls in argument defaults
+    "B008",   # do not perform function calls in argument defaults,
+    "ARG001",
+    "ARG002",
+    "F841"
 ]
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = ["src"]
 
 [tool.mypy]

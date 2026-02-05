@@ -203,7 +203,7 @@ class ModelService:
             if isinstance(shap_values, list):
                 shap_values = shap_values[1]  # For binary classification
 
-            for i, (app_dict, shap_vals) in enumerate(zip(app_dicts, shap_values)):
+            for i, (app_dict, shap_vals) in enumerate(zip(app_dicts, shap_values, strict=True)):
                 explanations[i] = self._format_explanation(
                     shap_vals, feature_names, app_dict
                 )
@@ -280,7 +280,7 @@ class ModelService:
             base_value = 0.5
 
         # Sort features by absolute contribution
-        feature_contributions = list(zip(feature_names, shap_values))
+        feature_contributions = list(zip(feature_names, shap_values, strict=True))
         feature_contributions.sort(key=lambda x: abs(x[1]), reverse=True)
 
         # Format top contributors
