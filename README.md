@@ -86,7 +86,7 @@ cd credit-risk-scoring
 
 # Create virtual environment
 python -m venv .venv
-source .venv/bin/activate 
+source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements-dev.txt

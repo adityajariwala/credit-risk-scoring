@@ -34,7 +34,7 @@ jobs:
         run: ruff format --check src/ tests/
 
       - name: Run MyPy type checker
-        run: mypy src/ --ignore-missing-imports
+        run: mypy src/
 
   test:
     name: Test
