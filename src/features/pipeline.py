@@ -192,7 +192,7 @@ class FeaturePipeline:
         """Fit and transform in one step."""
         return self.fit(df, target).transform(df)
 
-    def transform_single(self, row: dict[str, Any]) -> dict[Hashable, float]:
+    def transform_single(self, row: dict[str, Any]) -> dict[str, float]:
         """
         Transform a single observation for real-time inference.
 
@@ -211,7 +211,7 @@ class FeaturePipeline:
         df = pd.DataFrame([row])
         transformed = self.transform(df)
 
-        return transformed.iloc[0].to_dict()
+        return {str(k): v for k, v  in transformed.iloc[0].to_dict().items()}
 
     def save(self, path: str | Path) -> None:
         """

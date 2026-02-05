@@ -254,4 +254,4 @@ def compute_population_stability_index(
     # Compute PSI
     psi = np.sum((actual_pct - expected_pct) * np.log(actual_pct / expected_pct), dtype=np.float64)
 
-    return round(psi, 4)
+    return np.float64(round(psi, 4))
