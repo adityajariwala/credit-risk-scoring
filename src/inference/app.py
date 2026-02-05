@@ -68,7 +68,7 @@ REQUEST_COUNTER = Counter(
 def load_config(config_path: str = "config/config.yaml") -> dict[str, Any]:
     """Load configuration from YAML file."""
     with open(config_path) as f:
-        return yaml.safe_load(f)
+        return {str(k): v for k, v in yaml.safe_load(f).items()}
 
 
 # Global model service instance
@@ -133,7 +133,7 @@ async def log_requests(request: Request, call_next: Any) -> Response:
     """Log all HTTP requests with timing."""
     start_time = time.perf_counter()
 
-    response = await call_next(request)
+    response: Response = await call_next(request)
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 

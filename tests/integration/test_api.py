@@ -44,20 +44,58 @@ def full_config() -> dict[str, Any]:
             "numeric": [
                 {"name": "loan_amnt", "transform": "log1p", "fill_value": 0},
                 {"name": "annual_inc", "transform": "log1p", "fill_value": 0},
-                {"name": "dti", "transform": "clip", "clip_min": 0, "clip_max": 100, "fill_value": 0},
+                {
+                    "name": "dti",
+                    "transform": "clip",
+                    "clip_min": 0,
+                    "clip_max": 100,
+                    "fill_value": 0,
+                },
                 {"name": "open_acc", "transform": "none", "fill_value": 0},
                 {"name": "revol_bal", "transform": "log1p", "fill_value": 0},
-                {"name": "revol_util", "transform": "clip", "clip_min": 0, "clip_max": 150, "fill_value": 0},
+                {
+                    "name": "revol_util",
+                    "transform": "clip",
+                    "clip_min": 0,
+                    "clip_max": 150,
+                    "fill_value": 0,
+                },
                 {"name": "total_acc", "transform": "none", "fill_value": 0},
                 {"name": "int_rate", "transform": "none", "fill_value": 0},
                 {"name": "installment", "transform": "log1p", "fill_value": 0},
             ],
             "categorical": [
                 {"name": "term", "encoding": "label", "categories": ["36 months", "60 months"]},
-                {"name": "grade", "encoding": "ordinal", "categories": ["A", "B", "C", "D", "E", "F", "G"]},
-                {"name": "home_ownership", "encoding": "onehot", "categories": ["RENT", "OWN", "MORTGAGE", "OTHER"]},
-                {"name": "verification_status", "encoding": "onehot", "categories": ["Verified", "Source Verified", "Not Verified"]},
-                {"name": "purpose", "encoding": "label", "categories": ["debt_consolidation", "credit_card", "home_improvement", "major_purchase", "medical", "car", "vacation", "small_business", "other"]},
+                {
+                    "name": "grade",
+                    "encoding": "ordinal",
+                    "categories": ["A", "B", "C", "D", "E", "F", "G"],
+                },
+                {
+                    "name": "home_ownership",
+                    "encoding": "onehot",
+                    "categories": ["RENT", "OWN", "MORTGAGE", "OTHER"],
+                },
+                {
+                    "name": "verification_status",
+                    "encoding": "onehot",
+                    "categories": ["Verified", "Source Verified", "Not Verified"],
+                },
+                {
+                    "name": "purpose",
+                    "encoding": "label",
+                    "categories": [
+                        "debt_consolidation",
+                        "credit_card",
+                        "home_improvement",
+                        "major_purchase",
+                        "medical",
+                        "car",
+                        "vacation",
+                        "small_business",
+                        "other",
+                    ],
+                },
             ],
             "derived": [
                 {"name": "loan_to_income_ratio", "formula": "loan_amnt / (annual_inc + 1)"},
@@ -99,23 +137,29 @@ def trained_model_dir(full_config: dict[str, Any]) -> Generator[Path, None, None
         np.random.seed(42)
         n = 200
 
-        df = pd.DataFrame({
-            "loan_amnt": np.random.lognormal(9, 0.5, n),
-            "annual_inc": np.random.lognormal(11, 0.5, n),
-            "dti": np.random.uniform(0, 50, n),
-            "open_acc": np.random.poisson(10, n),
-            "revol_bal": np.random.lognormal(8, 1, n),
-            "revol_util": np.random.uniform(0, 100, n),
-            "total_acc": np.random.poisson(20, n),
-            "int_rate": np.random.uniform(5, 25, n),
-            "installment": np.random.lognormal(6, 0.5, n),
-            "term": np.random.choice(["36 months", "60 months"], n),
-            "grade": np.random.choice(["A", "B", "C", "D", "E", "F", "G"], n),
-            "home_ownership": np.random.choice(["RENT", "OWN", "MORTGAGE", "OTHER"], n),
-            "verification_status": np.random.choice(["Verified", "Source Verified", "Not Verified"], n),
-            "purpose": np.random.choice(["debt_consolidation", "credit_card", "home_improvement"], n),
-            "loan_status": np.random.choice(["Fully Paid", "Charged Off"], n, p=[0.85, 0.15]),
-        })
+        df = pd.DataFrame(
+            {
+                "loan_amnt": np.random.lognormal(9, 0.5, n),
+                "annual_inc": np.random.lognormal(11, 0.5, n),
+                "dti": np.random.uniform(0, 50, n),
+                "open_acc": np.random.poisson(10, n),
+                "revol_bal": np.random.lognormal(8, 1, n),
+                "revol_util": np.random.uniform(0, 100, n),
+                "total_acc": np.random.poisson(20, n),
+                "int_rate": np.random.uniform(5, 25, n),
+                "installment": np.random.lognormal(6, 0.5, n),
+                "term": np.random.choice(["36 months", "60 months"], n),
+                "grade": np.random.choice(["A", "B", "C", "D", "E", "F", "G"], n),
+                "home_ownership": np.random.choice(["RENT", "OWN", "MORTGAGE", "OTHER"], n),
+                "verification_status": np.random.choice(
+                    ["Verified", "Source Verified", "Not Verified"], n
+                ),
+                "purpose": np.random.choice(
+                    ["debt_consolidation", "credit_card", "home_improvement"], n
+                ),
+                "loan_status": np.random.choice(["Fully Paid", "Charged Off"], n, p=[0.85, 0.15]),
+            }
+        )
 
         y = (df["loan_status"] == "Charged Off").astype(int)
         X = df.drop(columns=["loan_status"])
@@ -166,7 +210,9 @@ def trained_model_dir(full_config: dict[str, Any]) -> Generator[Path, None, None
 
 
 @pytest.fixture
-def test_client(trained_model_dir: Path, full_config: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def test_client(
+    trained_model_dir: Path, full_config: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> TestClient:
     """Create a test client with loaded model."""
     # Patch the config loading to use our test config
     config_path = trained_model_dir / "config" / "config.yaml"

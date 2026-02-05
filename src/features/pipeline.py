@@ -9,6 +9,7 @@ consistently, preventing training-serving skew.
 from __future__ import annotations
 
 import json
+from collections.abc import Hashable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -156,9 +157,7 @@ class FeaturePipeline:
         # Ensure consistent column ordering
         return result[self.feature_names]
 
-    def _add_derived_features(
-        self, result: pd.DataFrame, original: pd.DataFrame
-    ) -> pd.DataFrame:
+    def _add_derived_features(self, result: pd.DataFrame, original: pd.DataFrame) -> pd.DataFrame:
         """
         Add derived features based on formulas.
 
@@ -171,12 +170,12 @@ class FeaturePipeline:
 
             try:
                 # Create a combined namespace for eval
-                namespace = {**original.to_dict("series"), **result.to_dict("series")}
-                # Add numpy for mathematical operations
-                namespace["np"] = np
+                namespace = {**original.to_dict("series"), **result.to_dict("series"), "np": np}
 
                 # Evaluate the formula safely
-                result[name] = pd.eval(formula, local_dict=namespace)
+                result[name] = pd.eval(
+                    formula, local_dict={str(k): v for k, v in namespace.items()}
+                )
 
                 # Handle any infinities or NaN from division
                 result[name] = result[name].replace([np.inf, -np.inf], 0).fillna(0)
@@ -193,7 +192,7 @@ class FeaturePipeline:
         """Fit and transform in one step."""
         return self.fit(df, target).transform(df)
 
-    def transform_single(self, row: dict[str, Any]) -> dict[str, float]:
+    def transform_single(self, row: dict[str, Any]) -> dict[Hashable, float]:
         """
         Transform a single observation for real-time inference.
 
@@ -228,12 +227,10 @@ class FeaturePipeline:
 
         state = {
             "numeric_transforms": {
-                name: transform.to_dict()
-                for name, transform in self.numeric_transforms.items()
+                name: transform.to_dict() for name, transform in self.numeric_transforms.items()
             },
             "categorical_transforms": {
-                name: transform.to_dict()
-                for name, transform in self.categorical_transforms.items()
+                name: transform.to_dict() for name, transform in self.categorical_transforms.items()
             },
             "derived_features": self.derived_features,
             "feature_names": self.feature_names,

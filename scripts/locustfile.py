@@ -106,9 +106,7 @@ class CreditRiskUser(HttpUser):
             "term": random.choice(["36 months", "60 months"]),
             "grade": grade,
             "home_ownership": random.choice(["RENT", "OWN", "MORTGAGE", "OTHER"]),
-            "verification_status": random.choice(
-                ["Verified", "Source Verified", "Not Verified"]
-            ),
+            "verification_status": random.choice(["Verified", "Source Verified", "Not Verified"]),
             "purpose": random.choice(
                 [
                     "debt_consolidation",

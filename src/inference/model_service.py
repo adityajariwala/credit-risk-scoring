@@ -194,27 +194,25 @@ class ModelService:
         X = X[feature_names]
 
         # Batch prediction
-        probas = self.model.predict_proba(X)[:, 1]
+        probs = self.model.predict_proba(X)[:, 1]
 
         # Generate explanations if requested
-        explanations = [None] * len(applications)
+        explanations: list[PredictionExplanation | None] = [None] * len(applications)
         if include_explanations and self.explainer is not None:
             shap_values = self.explainer.shap_values(X)
             if isinstance(shap_values, list):
                 shap_values = shap_values[1]  # For binary classification
 
             for i, (app_dict, shap_vals) in enumerate(zip(app_dicts, shap_values, strict=True)):
-                explanations[i] = self._format_explanation(
-                    shap_vals, feature_names, app_dict
-                )
+                explanations[i] = self._format_explanation(shap_vals, feature_names, app_dict)
 
         # Build response
         predictions = []
-        for i, proba in enumerate(probas):
-            risk_tier, recommendation = self._get_risk_tier(proba)
+        for i, prob in enumerate(probs):
+            risk_tier, recommendation = self._get_risk_tier(prob)
             predictions.append(
                 RiskPrediction(
-                    risk_score=round(float(proba), 4),
+                    risk_score=round(float(prob), 4),
                     risk_tier=risk_tier,
                     recommendation=recommendation,
                     model_version=self.metadata.get("model_version", "unknown"),
@@ -266,9 +264,7 @@ class ModelService:
     ) -> PredictionExplanation:
         """Format SHAP values into explanation schema."""
         max_features = (
-            self.config.get("inference", {})
-            .get("shap", {})
-            .get("max_display_features", 10)
+            self.config.get("inference", {}).get("shap", {}).get("max_display_features", 10)
         )
 
         # Get base value (expected value)

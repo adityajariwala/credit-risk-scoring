@@ -130,9 +130,7 @@ class RiskPrediction(BaseModel):
     Includes risk score, classification, and optional explanation.
     """
 
-    risk_score: float = Field(
-        ..., ge=0, le=1, description="Probability of default (0-1)"
-    )
+    risk_score: float = Field(..., ge=0, le=1, description="Probability of default (0-1)")
     risk_tier: RiskTier = Field(..., description="Risk tier classification")
     recommendation: Recommendation = Field(
         ..., description="Lending recommendation based on risk tier"
@@ -167,9 +165,7 @@ class BatchPredictionRequest(BaseModel):
     applications: list[LoanApplication] = Field(
         ..., min_length=1, max_length=100, description="List of loan applications"
     )
-    include_explanations: bool = Field(
-        False, description="Whether to include SHAP explanations"
-    )
+    include_explanations: bool = Field(False, description="Whether to include SHAP explanations")
 
 
 class BatchPredictionResponse(BaseModel):

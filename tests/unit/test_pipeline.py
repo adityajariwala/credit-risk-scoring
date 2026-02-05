@@ -99,9 +99,7 @@ class TestFeaturePipeline:
         batch_result = fitted_pipeline.transform(sample_dataframe.iloc[[0]])
 
         for col in fitted_pipeline.get_feature_names():
-            assert single_result[col] == pytest.approx(
-                batch_result[col].iloc[0], rel=1e-5
-            )
+            assert single_result[col] == pytest.approx(batch_result[col].iloc[0], rel=1e-5)
 
     def test_derived_features(
         self,

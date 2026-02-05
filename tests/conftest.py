@@ -40,11 +40,25 @@ def sample_config() -> dict[str, Any]:
             "numeric": [
                 {"name": "loan_amnt", "transform": "log1p", "fill_value": 0},
                 {"name": "annual_inc", "transform": "log1p", "fill_value": 0},
-                {"name": "dti", "transform": "clip", "clip_min": 0, "clip_max": 100, "fill_value": 0},
+                {
+                    "name": "dti",
+                    "transform": "clip",
+                    "clip_min": 0,
+                    "clip_max": 100,
+                    "fill_value": 0,
+                },
             ],
             "categorical": [
-                {"name": "grade", "encoding": "ordinal", "categories": ["A", "B", "C", "D", "E", "F", "G"]},
-                {"name": "home_ownership", "encoding": "onehot", "categories": ["RENT", "OWN", "MORTGAGE", "OTHER"]},
+                {
+                    "name": "grade",
+                    "encoding": "ordinal",
+                    "categories": ["A", "B", "C", "D", "E", "F", "G"],
+                },
+                {
+                    "name": "home_ownership",
+                    "encoding": "onehot",
+                    "categories": ["RENT", "OWN", "MORTGAGE", "OTHER"],
+                },
             ],
             "derived": [
                 {"name": "loan_to_income_ratio", "formula": "loan_amnt / (annual_inc + 1)"},
@@ -84,14 +98,16 @@ def sample_dataframe() -> pd.DataFrame:
     np.random.seed(42)
     n = 100
 
-    return pd.DataFrame({
-        "loan_amnt": np.random.lognormal(9, 0.5, n).clip(1000, 40000),
-        "annual_inc": np.random.lognormal(11, 0.5, n).clip(20000, 200000),
-        "dti": np.random.uniform(0, 50, n),
-        "grade": np.random.choice(["A", "B", "C", "D", "E", "F", "G"], n),
-        "home_ownership": np.random.choice(["RENT", "OWN", "MORTGAGE", "OTHER"], n),
-        "loan_status": np.random.choice(["Fully Paid", "Charged Off"], n, p=[0.85, 0.15]),
-    })
+    return pd.DataFrame(
+        {
+            "loan_amnt": np.random.lognormal(9, 0.5, n).clip(1000, 40000),
+            "annual_inc": np.random.lognormal(11, 0.5, n).clip(20000, 200000),
+            "dti": np.random.uniform(0, 50, n),
+            "grade": np.random.choice(["A", "B", "C", "D", "E", "F", "G"], n),
+            "home_ownership": np.random.choice(["RENT", "OWN", "MORTGAGE", "OTHER"], n),
+            "loan_status": np.random.choice(["Fully Paid", "Charged Off"], n, p=[0.85, 0.15]),
+        }
+    )
 
 
 @pytest.fixture

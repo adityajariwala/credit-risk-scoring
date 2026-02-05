@@ -32,7 +32,7 @@ from src.features.pipeline import FeaturePipeline
 def load_config(config_path: str | Path) -> dict[str, Any]:
     """Load configuration from YAML file."""
     with open(config_path) as f:
-        return yaml.safe_load(f)
+        return {str(k): v for k, v in yaml.safe_load(f).items()}
 
 
 def load_data(data_path: str | Path, config: dict[str, Any]) -> tuple[pd.DataFrame, pd.Series]:
@@ -186,9 +186,7 @@ def train_model(
     return model
 
 
-def cross_validate(
-    X: pd.DataFrame, y: pd.Series, config: dict[str, Any]
-) -> dict[str, list[float]]:
+def cross_validate(X: pd.DataFrame, y: pd.Series, config: dict[str, Any]) -> dict[str, list[float]]:
     """
     Perform stratified k-fold cross-validation.
 
@@ -368,7 +366,11 @@ def main() -> int:
     )
 
     X_train, X_val, y_train, y_val = train_test_split(
-        X_temp, y_temp, test_size=val_size / (1 - test_size), random_state=random_state, stratify=y_temp
+        X_temp,
+        y_temp,
+        test_size=val_size / (1 - test_size),
+        random_state=random_state,
+        stratify=y_temp,
     )
 
     print("\nData splits:")

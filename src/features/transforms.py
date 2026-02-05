@@ -25,11 +25,11 @@ class BaseTransform(ABC):
         pass
 
     @abstractmethod
-    def transform(self, data: pd.Series) -> pd.Series:
+    def transform(self, data: pd.Series) -> pd.Series | pd.DataFrame:
         """Apply the transform to data."""
         pass
 
-    def fit_transform(self, data: pd.Series) -> pd.Series:
+    def fit_transform(self, data: pd.Series) -> pd.Series | pd.DataFrame:
         """Fit and transform in one step."""
         return self.fit(data).transform(data)
 
@@ -59,7 +59,7 @@ class Log1pTransform(BaseTransform):
     def transform(self, data: pd.Series) -> pd.Series:
         filled = data.fillna(self.fill_value)
         # Clip negative values to 0 before log
-        return np.log1p(np.maximum(filled, 0))
+        return pd.Series(np.log1p(np.maximum(filled, 0)))
 
     def to_dict(self) -> dict[str, Any]:
         return {"type": "log1p", "fill_value": self.fill_value}
@@ -86,7 +86,7 @@ class ClipTransform(BaseTransform):
 
     def transform(self, data: pd.Series) -> pd.Series:
         filled = data.fillna(self.fill_value)
-        return np.clip(filled, self.clip_min, self.clip_max)
+        return pd.Series(np.clip(filled, self.clip_min, self.clip_max))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -185,7 +185,8 @@ class LabelEncoderTransform(BaseTransform):
     def transform(self, data: pd.Series) -> pd.Series:
         if self._mapping is None:
             raise ValueError("Transform must be fitted before transform")
-        return data.map(lambda x: self._mapping.get(x, self.unknown_value))
+        else:
+            return data.map(lambda x: (self._mapping or {}).get(x, self.unknown_value))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -221,7 +222,7 @@ class OrdinalEncoderTransform(BaseTransform):
     def transform(self, data: pd.Series) -> pd.Series:
         if self._mapping is None:
             raise ValueError("Transform must be fitted before transform")
-        return data.map(lambda x: self._mapping.get(x, self.unknown_value))
+        return data.map(lambda x: (self._mapping or {}).get(x, self.unknown_value))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -267,8 +268,7 @@ class OneHotEncoderTransform(BaseTransform):
     def get_feature_names(self) -> list[str]:
         """Get output feature names after transformation."""
         return [
-            f"{self.feature_name}_{cat}" if self.feature_name else cat
-            for cat in self.categories
+            f"{self.feature_name}_{cat}" if self.feature_name else cat for cat in self.categories
         ]
 
     def to_dict(self) -> dict[str, Any]:
@@ -314,10 +314,10 @@ class TargetEncoderTransform(BaseTransform):
                 # Apply smoothing: weighted average of category mean and global mean
                 weight = row["count"] / (row["count"] + self.smoothing)
                 smoothed_mean = weight * row["mean"] + (1 - weight) * self._global_mean
-                self._encoding_map[cat] = smoothed_mean
+                self._encoding_map[str(cat)] = smoothed_mean
             else:
                 # Use global mean for rare categories
-                self._encoding_map[cat] = self._global_mean
+                self._encoding_map[str(cat)] = self._global_mean
 
         self.fill_value = self._global_mean
         return self
@@ -325,7 +325,7 @@ class TargetEncoderTransform(BaseTransform):
     def transform(self, data: pd.Series) -> pd.Series:
         if self._encoding_map is None or self._global_mean is None:
             raise ValueError("Transform must be fitted before transform")
-        return data.map(lambda x: self._encoding_map.get(x, self._global_mean))
+        return data.map(lambda x: (self._encoding_map or {}).get(x, self._global_mean))
 
     def to_dict(self) -> dict[str, Any]:
         return {

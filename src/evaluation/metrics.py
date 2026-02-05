@@ -212,7 +212,7 @@ def compute_gini_coefficient(y_true: np.ndarray, y_pred_proba: np.ndarray) -> fl
         Gini coefficient
     """
     auc_score = roc_auc_score(y_true, y_pred_proba)
-    return round(2 * auc_score - 1, 4)
+    return np.float64(round(2.0 * auc_score - 1.0, 4))
 
 
 def compute_population_stability_index(
@@ -252,6 +252,6 @@ def compute_population_stability_index(
     actual_pct = np.clip(actual_pct, 1e-10, 1)
 
     # Compute PSI
-    psi = np.sum((actual_pct - expected_pct) * np.log(actual_pct / expected_pct))
+    psi = np.sum((actual_pct - expected_pct) * np.log(actual_pct / expected_pct), dtype=np.float64)
 
     return round(psi, 4)

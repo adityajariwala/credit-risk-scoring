@@ -248,9 +248,7 @@ class TestTargetEncoderTransform:
         transform.fit(data, target)
 
         # Rare category should use global mean
-        assert transform._encoding_map["rare"] == pytest.approx(
-            transform._global_mean, rel=0.1
-        )
+        assert transform._encoding_map["rare"] == pytest.approx(transform._global_mean, rel=0.1)
 
 
 class TestTransformFactory:
