@@ -20,7 +20,7 @@ import yaml
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from prometheus_client import Counter, Histogram, generate_latest
+from prometheus_client import CollectorRegistry, Counter, Histogram, generate_latest
 from starlette.responses import Response
 
 from src.inference.model_service import ModelService
@@ -47,21 +47,26 @@ structlog.configure(
 
 logger = structlog.get_logger()
 
+REGISTRY = CollectorRegistry()
+
 # Prometheus metrics
 PREDICTION_COUNTER = Counter(
     "predictions_total",
     "Total number of predictions",
     ["risk_tier", "recommendation"],
+    registry=REGISTRY,
 )
 PREDICTION_LATENCY = Histogram(
     "prediction_latency_seconds",
     "Prediction latency in seconds",
     buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
+    registry=REGISTRY,
 )
 REQUEST_COUNTER = Counter(
     "http_requests_total",
     "Total HTTP requests",
     ["method", "endpoint", "status"],
+    registry=REGISTRY,
 )
 
 
@@ -187,7 +192,7 @@ async def readiness_check() -> JSONResponse:
 @app.get("/metrics", tags=["System"])
 async def metrics() -> Response:
     """Prometheus metrics endpoint."""
-    return Response(content=generate_latest(), media_type="text/plain")
+    return Response(content=generate_latest(registry=REGISTRY), media_type="text/plain")
 
 
 @app.get("/model/info", response_model=ModelInfo, tags=["Model"])

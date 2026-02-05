@@ -19,3 +19,5 @@ prometheus-client>=0.17.0
 # Configuration and serialization
 pyyaml>=6.0
 joblib>=1.3.0
+
+starlette

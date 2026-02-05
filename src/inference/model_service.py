@@ -143,6 +143,9 @@ class ModelService:
         # Generate explanation if requested
         explanation = None
         if include_explanation and self.explainer is not None:
+            for feature in self.pipeline.derived_features:
+                if not X[feature.get("name")].empty and feature.get("name") not in app_dict:
+                    app_dict[feature.get("name")] = round(X[feature.get("name")].iloc[0], 4)
             explanation = self._generate_explanation(X, app_dict)
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000
@@ -240,7 +243,7 @@ class ModelService:
                 recommendation = Recommendation(tier["recommendation"])
                 return risk_tier, recommendation
 
-        # Default to highest risk if no tier matches
+        # Default to the highest risk if no tier matches
         return RiskTier.VERY_HIGH, Recommendation.DECLINE
 
     def _generate_explanation(
@@ -276,7 +279,7 @@ class ModelService:
             base_value = 0.5
 
         # Sort features by absolute contribution
-        feature_contributions = list(zip(feature_names, shap_values, strict=True))
+        feature_contributions = list(zip(feature_names, shap_values, strict=False))
         feature_contributions.sort(key=lambda x: abs(x[1]), reverse=True)
 
         # Format top contributors

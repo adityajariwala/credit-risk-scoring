@@ -1,0 +1,16 @@
+{
+  "loan_amnt": 15000,
+  "annual_inc": 75000,
+  "dti": 18.5,
+  "open_acc": 8,
+  "revol_bal": 12500,
+  "revol_util": 45.2,
+  "total_acc": 20,
+  "int_rate": 12.5,
+  "installment": 450,
+  "term": "36 months",
+  "grade": "B",
+  "home_ownership": "MORTGAGE",
+  "verification_status": "Verified",
+  "purpose": "debt_consolidation"
+}
