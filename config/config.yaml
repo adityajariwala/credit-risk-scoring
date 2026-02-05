@@ -1,0 +1,153 @@
+# Credit Risk Scoring System Configuration
+# =========================================
+# This config drives training, feature engineering, and inference.
+# Change model_version to deploy a new model.
+
+model:
+  name: "credit_risk_lgbm"
+  version: "v1.0.0"
+  type: "lightgbm"
+
+  # LightGBM hyperparameters
+  params:
+    objective: "binary"
+    metric: "auc"
+    boosting_type: "gbdt"
+    num_leaves: 31
+    learning_rate: 0.05
+    feature_fraction: 0.8
+    bagging_fraction: 0.8
+    bagging_freq: 5
+    n_estimators: 200
+    early_stopping_rounds: 20
+    verbose: -1
+    random_state: 42
+
+features:
+  # Numeric features with their transformations
+  numeric:
+    - name: "loan_amnt"
+      transform: "log1p"
+      fill_value: 0
+    - name: "annual_inc"
+      transform: "log1p"
+      fill_value: 0
+    - name: "dti"
+      transform: "clip"
+      clip_min: 0
+      clip_max: 100
+      fill_value: 0
+    - name: "open_acc"
+      transform: "none"
+      fill_value: 0
+    - name: "revol_bal"
+      transform: "log1p"
+      fill_value: 0
+    - name: "revol_util"
+      transform: "clip"
+      clip_min: 0
+      clip_max: 150
+      fill_value: 0
+    - name: "total_acc"
+      transform: "none"
+      fill_value: 0
+    - name: "int_rate"
+      transform: "none"
+      fill_value: 0
+    - name: "installment"
+      transform: "log1p"
+      fill_value: 0
+
+  # Categorical features with encoding strategy
+  categorical:
+    - name: "term"
+      encoding: "label"
+      categories: ["36 months", "60 months"]
+    - name: "grade"
+      encoding: "ordinal"
+      categories: ["A", "B", "C", "D", "E", "F", "G"]
+    - name: "home_ownership"
+      encoding: "onehot"
+      categories: ["RENT", "OWN", "MORTGAGE", "OTHER"]
+    - name: "verification_status"
+      encoding: "onehot"
+      categories: ["Verified", "Source Verified", "Not Verified"]
+    - name: "purpose"
+      encoding: "target"
+      min_samples: 100
+
+  # Derived features (feature engineering)
+  derived:
+    - name: "loan_to_income_ratio"
+      formula: "loan_amnt / (annual_inc + 1)"
+    - name: "installment_to_income_ratio"
+      formula: "installment * 12 / (annual_inc + 1)"
+    - name: "credit_utilization_risk"
+      formula: "revol_util * revol_bal / 10000"
+
+training:
+  test_size: 0.2
+  validation_size: 0.1
+  random_state: 42
+  target_column: "loan_status"
+  positive_class: "Charged Off"
+
+  # Class imbalance handling
+  class_weight: "balanced"
+
+  # Cross-validation
+  cv_folds: 5
+  stratified: true
+
+inference:
+  # Probability threshold for binary classification
+  default_threshold: 0.5
+
+  # Risk tiers for business interpretation
+  risk_tiers:
+    - name: "low"
+      max_score: 0.2
+      recommendation: "approve"
+    - name: "medium"
+      max_score: 0.5
+      recommendation: "review"
+    - name: "high"
+      max_score: 0.8
+      recommendation: "enhanced_review"
+    - name: "very_high"
+      max_score: 1.0
+      recommendation: "decline"
+
+  # SHAP explanation settings
+  shap:
+    enabled: true
+    max_display_features: 10
+    background_samples: 100
+
+monitoring:
+  # Prediction drift detection
+  drift:
+    enabled: true
+    reference_window_days: 30
+    psi_threshold: 0.2  # Population Stability Index threshold
+
+  # Logging
+  log_predictions: true
+  log_explanations: false  # Can be expensive
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 4
+  timeout: 30
+
+  # Rate limiting
+  rate_limit:
+    requests_per_minute: 1000
+    burst: 50
+
+paths:
+  data_dir: "data"
+  model_dir: "models"
+  artifacts_dir: "artifacts"
+  logs_dir: "logs"

@@ -1,0 +1,19 @@
+# Include base requirements
+-r requirements.txt
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.0
+
+# Code quality
+ruff>=0.1.0
+mypy>=1.5.0
+pre-commit>=3.4.0
+
+# Load testing
+locust>=2.16.0
+
+# Type stubs
+pandas-stubs>=2.0.0
+types-PyYAML>=6.0.0
