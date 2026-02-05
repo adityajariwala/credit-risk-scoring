@@ -210,7 +210,7 @@ class FeaturePipeline:
         df = pd.DataFrame([row])
         transformed = self.transform(df)
 
-        return {str(k): v for k, v  in transformed.iloc[0].to_dict().items()}
+        return {str(k): v for k, v in transformed.iloc[0].to_dict().items()}
 
     def save(self, path: str | Path) -> None:
         """
