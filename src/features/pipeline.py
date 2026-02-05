@@ -9,7 +9,6 @@ consistently, preventing training-serving skew.
 from __future__ import annotations
 
 import json
-from collections.abc import Hashable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
