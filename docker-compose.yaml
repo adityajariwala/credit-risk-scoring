@@ -1,4 +1,4 @@
-version: "3.8"
+---
 
 services:
   # =============================================================================
@@ -9,7 +9,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: production
-    image: credit-risk-scoring:latest
+    image: latest
     container_name: credit-risk-api
     ports:
       - "8000:8000"
@@ -38,6 +38,22 @@ services:
         reservations:
           cpus: "0.5"
           memory: 512M
+
+  # =============================================================================
+  # React Frontend (nginx serves static build, proxies /api to backend)
+  # =============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: credit-risk-frontend:latest
+    container_name: credit-risk-frontend
+    ports:
+      - "3001:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
 
   # =============================================================================
   # Prometheus for Metrics Collection (Optional)

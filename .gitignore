@@ -79,3 +79,7 @@ Thumbs.db
 
 # Locust
 locust_*.html
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
