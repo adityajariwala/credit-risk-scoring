@@ -13,4 +13,4 @@ prometheus-client>=0.17.0
 pyyaml>=6.0
 joblib>=1.3.0
 starlette
-pytest
+pytest>=7.4.0

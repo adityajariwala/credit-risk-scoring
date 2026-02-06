@@ -395,131 +395,107 @@ export default function App() {
                                         <Typography variant="h6" gutterBottom>
                                             Feature Contributions (SHAP)
                                         </Typography>
-                                        <Typography
-                                            variant="body2"
-                                            color="text.secondary"
-                                            sx={{mb: 2}}
-                                        >
-                                            Each bar shows how a feature pushes the risk score up
-                                            (red, increases risk) or down (green, decreases risk).
+                                        <Typography variant="body2" color="text.secondary" sx={{mb: 2}}>
+                                            Bars to the right increase risk (red). Bars to the left decrease risk
+                                            (green). Values show contribution to the final risk score.
                                         </Typography>
+
                                         {(() => {
-                                            const contributors =
-                                                result.explanation!.top_contributors;
-                                            const maxAbs = Math.max(
-                                                ...contributors.map((x) => Math.abs(x.contribution))
+                                            const contributors = result.explanation!.top_contributors;
+
+                                            // Optional: drop near-zero noise
+                                            const filtered = contributors.filter(
+                                                (c) => Math.abs(c.contribution) > 0.0005
                                             );
-                                            return contributors.map((c) => {
-                                                const barPct =
-                                                    maxAbs > 0
-                                                        ? (Math.abs(c.contribution) / maxAbs) * 100
-                                                        : 0;
+
+                                            const maxAbs = Math.max(
+                                                ...filtered.map((c) => Math.abs(c.contribution)),
+                                                1e-6
+                                            );
+
+                                            return filtered.map((c) => {
                                                 const isRisk = c.contribution > 0;
+                                                const barWidth = (Math.abs(c.contribution) / maxAbs) * 50;
                                                 const pretty = c.feature.replace(/_/g, " ");
+
                                                 return (
                                                     <Box
-                                                        key={pretty}
+                                                        key={c.feature}
                                                         sx={{
                                                             display: "flex",
                                                             alignItems: "center",
-                                                            mb: 0.75,
+                                                            mb: 1,
                                                             height: 28,
                                                         }}
                                                     >
+                                                        {/* Feature label */}
                                                         <Typography
                                                             variant="body2"
                                                             sx={{
-                                                                width: 140,
-                                                                flexShrink: 0,
+                                                                width: 150,
                                                                 textAlign: "right",
-                                                                pr: 1.5,
-                                                                fontFamily: "inherit",
+                                                                pr: 2,
                                                                 fontWeight: 500,
-                                                                fontSize: "0.8rem",
+                                                                whiteSpace: "nowrap",
                                                                 overflow: "hidden",
                                                                 textOverflow: "ellipsis",
-                                                                whiteSpace: "nowrap",
                                                             }}
                                                         >
                                                             {pretty}
                                                         </Typography>
+
+                                                        {/* Bar area */}
                                                         <Box
                                                             sx={{
-                                                                flexGrow: 1,
-                                                                display: "flex",
-                                                                alignItems: "center",
                                                                 position: "relative",
-                                                                height: "100%",
+                                                                flexGrow: 1,
+                                                                height: 20,
+                                                                bgcolor: "transparent",
+                                                                border: "1px solid",
+                                                                borderColor: "grey.200",
+                                                                borderRadius: 1,
                                                             }}
                                                         >
-                                                            {/* Left half (safe / green) */}
+                                                            {/* Zero line */}
                                                             <Box
                                                                 sx={{
-                                                                    width: "50%",
-                                                                    height: "100%",
-                                                                    display: "flex",
-                                                                    justifyContent: "flex-end",
-                                                                    alignItems: "center",
-                                                                    pr: "1px",
-                                                                }}
-                                                            >
-                                                                {!isRisk && (
-                                                                    <Box
-                                                                        sx={{
-                                                                            width: `${barPct}%`,
-                                                                            height: 20,
-                                                                            bgcolor: "#2e7d32",
-                                                                            borderRadius: "4px 0 0 4px",
-                                                                        }}
-                                                                    />
-                                                                )}
-                                                            </Box>
-                                                            {/* Center divider */}
-                                                            <Box
-                                                                sx={{
-                                                                    width: 2,
-                                                                    height: "100%",
-                                                                    bgcolor: "grey.300",
-                                                                    opacity: 0.6,
-                                                                    flexShrink: 0,
+                                                                    position: "absolute",
+                                                                    left: "50%",
+                                                                    top: 0,
+                                                                    bottom: 0,
+                                                                    width: 1,
+                                                                    bgcolor: "grey.400",
                                                                 }}
                                                             />
-                                                            {/* Right half (risk / red) */}
+
+                                                            {/* Contribution bar */}
                                                             <Box
                                                                 sx={{
-                                                                    width: "50%",
+                                                                    position: "absolute",
+                                                                    left: "50%",
                                                                     height: "100%",
-                                                                    display: "flex",
-                                                                    justifyContent: "flex-start",
-                                                                    alignItems: "center",
-                                                                    pl: "1px",
+                                                                    width: `${barWidth}%`,
+                                                                    bgcolor: isRisk ? "error.main" : "success.main",
+                                                                    transform: isRisk ? "none" : "translateX(-100%)",
+                                                                    borderRadius: 1,
                                                                 }}
-                                                            >
-                                                                {isRisk && (
-                                                                    <Box
-                                                                        sx={{
-                                                                            width: `${barPct}%`,
-                                                                            height: 20,
-                                                                            bgcolor: "#d32f2f",
-                                                                            borderRadius: "0 4px 4px 0",
-                                                                        }}
-                                                                    />
-                                                                )}
-                                                            </Box>
+                                                            />
                                                         </Box>
+
+                                                        {/* Value */}
                                                         <Typography
                                                             variant="caption"
                                                             sx={{
-                                                                width: 90,
-                                                                pl: 1,
-                                                                flexShrink: 0,
+                                                                width: 80,
+                                                                pl: 1.5,
                                                                 fontFamily: "monospace",
                                                                 fontWeight: 600,
-                                                                color: isRisk ? "#d32f2f" : "#2e7d32",
+                                                                color: isRisk ? "error.main" : "success.main",
                                                             }}
                                                         >
-                                                            {isRisk ? "+" : ""}
-                                                            {`${c.contribution > 0 ? "+" : "−"}${Math.abs(c.contribution * 100).toFixed(1)}%`}
+                                                            {`${isRisk ? "+" : "−"}${Math.abs(
+                                                                c.contribution * 100
+                                                            ).toFixed(1)}%`}
                                                         </Typography>
                                                     </Box>
                                                 );
