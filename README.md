@@ -236,7 +236,7 @@ inference:
 
 ### Feature Pipeline Parity
 
-The same `FeaturePipeline` class is used for both training and inference, ensuring transformations are identical. The pipeline is serialized with the model and loaded during inference.
+The same `FeaturePipeline` class is used for both training & inference, ensuring transformations are identical. The pipeline is serialized with the model and loaded during inference.
 
 ```python
 # Training
